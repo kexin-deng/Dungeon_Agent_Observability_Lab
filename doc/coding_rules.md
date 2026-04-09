@@ -2,20 +2,20 @@ Coding Standard
 
 ## Purpose
 
-This document defines the coding and system design constraints for building the Dungeon Agent Observability Lab using AI coding tools such as Claude Code and Codex.
+This document defines the coding and system design constraints for building the Dungeon Agent Observability Lab using AI coding tools (Claude Code, Codex).
 
 It ensures consistency, traceability, and alignment with project goals.
 
 ## AI Usage Strategy
 
-- ChatGPT is used for generating prompts, drafting this `coding_rules.md` file, and guiding setup.
-- Claude is used for system design and higher-level reasoning.
-- Codex is used for code implementation.
-- Human review, editing, and override always take precedence.
+- ChatGPT is used for generating prompts and coding_rules file and guiding setup.
+- Claude is used for system design and reasoning
+- Codex is used for code implementation
+- Human reviews, edits, and overrides outputs
 
 ## Python Rule
 
-You are helping build a small multi-agent simulation system for debugging and observability.
+You are helping me build a small multi-agent simulation system for debugging and observability.
 
 IMPORTANT:
 This is NOT a game optimization problem. The goal is NOT to solve the dungeon efficiently.
@@ -40,7 +40,7 @@ Focus on:
 - observability
 - debugging agent behavior
 
-Do NOT focus on:
+NOT focus on:
 - optimal policies
 - complex game mechanics
 
@@ -54,7 +54,7 @@ World:
   - key * 1
   - locked door * 1
   - exit * 1
-  - obstacles: 5-8 random walls
+  - Obstacles: 5–8 random walls
 - Agents start at random positions
 - Fog of war:
   - each agent only sees adjacent cells
@@ -70,15 +70,15 @@ AGENT DESIGN
 Each agent:
 - Acts in turns
 - Has limited local observation
-- Uses tools to interact with the environment
+- Uses tools to interact with environment
 
 Tool set:
-- `move(direction)` -> move one cell
-- `look()` -> observe nearby cells
-- `pick_up(item)`
-- `check_inventory()`
-- `use_item(item, target)`
-- `send_message(agent, message)`
+- move(direction) → move one cell
+- look() → observe nearby cells
+- pick_up(item)
+- check_inventory()
+- use_item(item, target)
+- send_message(agent, message)
 
 Important:
 - Agents do NOT need to be smart
@@ -98,7 +98,7 @@ For each step:
 
 Notes:
 - Agents take turns
-- Messages are delivered with delay on the next turn
+- Messages are delivered with delay (next turn)
 - End conditions:
   - success
   - max steps reached
@@ -111,6 +111,7 @@ TRACE / LOGGING REQUIREMENTS (VERY IMPORTANT)
 You MUST implement structured logging.
 
 Each step log must include:
+
 - step number
 - agent id
 - observation
@@ -130,18 +131,18 @@ Additionally:
 BELIEF TRACKING (IMPORTANT FEATURE)
 --------------------------------------------------
 
-Each agent should maintain a simple belief state.
+Each agent should maintain a simple belief state:
 
 Examples:
-- where the key is
-- where the door is
-- whether it has the key
+- where key is
+- where door is
+- whether it has key
 
 Log:
 - belief state
 - ground truth
 
-This allows detection of:
+This allows detecting:
 - stale beliefs
 - incorrect assumptions
 
@@ -150,6 +151,7 @@ FAILURE / DEBUGGING SUPPORT
 --------------------------------------------------
 
 The system should help identify:
+
 - incorrect tool usage
 - repeated actions / loops
 - belief vs reality mismatch
@@ -163,6 +165,7 @@ LEGIBILITY LAYER (CRITICAL)
 --------------------------------------------------
 
 Build a simple analysis tool that answers:
+
 1. What happened?
 2. Why did it happen?
 3. What should change?
@@ -172,18 +175,19 @@ Examples:
 - key failure moments
 - belief divergence
 
-Keep it simple. A printed report or basic visualization is enough.
+Keep it simple (print or basic visualization is fine).
 
 --------------------------------------------------
 CODE STRUCTURE
 --------------------------------------------------
 
 Organize code clearly:
-- `simulation.py` -> world + loop
-- `agents.py` -> agent logic
-- `tools.py` -> tool functions
-- `logger.py` -> structured logging
-- `main.py` -> entry point
+
+- simulation.py → world + loop
+- agents.py → agent logic
+- tools.py → tool functions
+- logger.py → structured logging
+- main.py → entry point
 
 Keep code modular and readable.
 
@@ -221,19 +225,19 @@ IMPORTANT STYLE RULES
 
 ## Visualization Layout
 
-Use a simple two-panel layout:
-- Left: grid world (current state)
-- Right: agent logs for current step
+- Use a simple two-panel layout:
+  - Left: grid world (current state)
+  - Right: agent logs for current step
 
 Grid:
 - ASCII-based visualization
 - Fixed size (8x8)
 - Symbols:
-  - `A` / `B`: agents
-  - `K`: key
-  - `D`: door
-  - `E`: exit
-  - `#`: obstacle
+  - A/B: agents
+  - K: key
+  - D: door
+  - E: exit
+  - #: obstacle
 
 Log panel:
 - agent id
@@ -257,9 +261,7 @@ Prioritize:
 - interpretability
 - debugging capability
 
-Do NOT prioritize:
+Not:
 - agent intelligence
 
-## Tracking Rule
-
-This section is reserved for future tracking requirements.
+## Tracking Rule (comes later)
