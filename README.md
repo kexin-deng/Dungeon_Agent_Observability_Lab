@@ -1,257 +1,268 @@
+# Dungeon Agent Observability Lab
 
-A lightweight multi-agent simulation system for tracing, debugging, and analyzing agent behavior in partially observable environments.
+A lightweight observability sandbox for multi-agent behavior in a partially observable dungeon.
 
----
+This project is not about building the smartest dungeon solver. It is about making agent behavior inspectable:
 
-## 🎯 Project Goal
+- what each agent saw
+- what it believed
+- what it decided
+- what tool actually executed
+- where coordination broke down
 
-This project focuses on **observability and debugging**, rather than solving the environment optimally.
+## What It Does
 
-Agents operate in a simple dungeon environment while the system captures structured traces to answer:
+Each run generates a fresh dungeon episode:
 
-* What happened?
-* Why did it happen?
-* What should change?
+- `8 x 8` grid
+- `2` agents
+- `1` key
+- `1` locked door
+- `1` exit
+- random interior obstacles
+- fog of war: each agent only sees its own tile plus adjacent tiles
 
----
+The task is:
 
-## 🧩 Environment Setup
+1. find the key
+2. unlock the door
+3. get both agents to the exit
 
-* Grid: **8 × 8**
-* Agents: **2**
-* Objects:
+The system records structured step-by-step traces and exposes them through:
 
-  * Key (1)
-  * Door (1, initially locked)
-  * Exit (1)
-  * Obstacles (random walls)
+- terminal rendering
+- local JSON trace export
+- optional Langfuse tracing
+- a React replay UI with a live grid + narrative log stream
 
-### Rules
+## Current Replay UI
 
-* Agents have **partial observability** (adjacent cells only)
-* One agent must pick up the key and unlock the door
-* **Door unlock is global**: once unlocked, all agents can pass
-* Goal: **both agents reach the exit**
+The replay frontend is driven by `artifacts/latest_trace.json` and includes:
 
----
+- left panel: live grid replay
+- right panel: streaming narrative log panel
+- step playback controls
+- timeline slider
+- 5-step colored movement trail
+- bulletin board under the grid for key milestones
+- run facts panel under the logs
+- clickable Langfuse trace link when available
 
-## 🤖 Agent Design
+The grid currently shows:
 
-Agents are intentionally simple:
+- persistent world objects
+- trail overlay
+- agents on top
+- replay-focused visual hierarchy
 
-* Turn-based actions
-* Local observations only
-* Limited tool set:
-
-  * `move(direction)`
-  * `look()`
-  * `pick_up(item)`
-  * `use_item(item, target)`
-  * `send_message(agent, message)`
-
-> Agents are not optimized for performance — failures and inefficiencies are expected and used for analysis.
-
----
-
-## 📊 Observability & Tracing
-
-Each step logs structured data including:
-
-* step number
-* agent id
-* observation
-* action + result
-* belief state
-* messages
-* environment state (e.g. `door_unlocked`)
-* latency breakdowns
-* Langfuse trace metadata
-
-### Langfuse Integration
-
-The project includes an optional Langfuse integration for end-to-end tracing.
-
-It captures:
-
-* agent decisions
-* tool calls
-* reasoning input/output
-* belief evolution
-* environment transitions
-* step latency
-* tool latency
-* reasoning / LLM latency
-
-When the `langfuse` package is installed and `LANGFUSE_PUBLIC_KEY` plus `LANGFUSE_SECRET_KEY` are set, the simulation emits trace/span data to Langfuse. Without those dependencies, the same fields are still written into the local JSON trace so local debugging continues to work.
-
-Example:
-
-```json
-{
-  "step": 22,
-  "agent": "A",
-  "action": "use_item",
-  "result": "door_unlocked",
-  "belief": {
-    "has_key": true,
-    "door_position": [6, 0]
-  }
-}
-```
-
----
-
-## 🧠 Belief Tracking
-
-Each agent maintains a belief state:
-
-* object locations (key, door, exit)
-* whether it has the key
-* visited positions
-* teammate status
-
-This enables detection of:
-
-* stale beliefs
-* incorrect assumptions
-* coordination gaps
-
----
-
-## ⚠️ Failure & Behavior Analysis
-
-The system surfaces meaningful patterns beyond raw logs:
-
-### 1. Loop / Inefficiency Detection
-
-Example:
+## Project Structure
 
 ```text
-Agent A revisited [6, 0] 12 times
+agents.py         agent policy and belief updates
+simulation.py     world generation, turn loop, summary building
+tools.py          environment tools (move, look, pick_up, use_item, send_message, ...)
+logger.py         structured step logging and JSON export
+observability.py  optional Langfuse tracer wrapper
+main.py           entry point, run orchestration, replay auto-launch
+replay_server.py  local static server for the built replay UI
+frontend/         React + Vite replay interface
+artifacts/        exported traces
 ```
 
-Indicates inefficient exploration or local policy failure.
+## Agent Model
 
----
+Agents are intentionally simple and traceable rather than optimized.
 
-### 2. Coordination Gaps
+Each agent has:
 
-* Agents may fail to act on shared information
-* Message passing may not result in correct behavior
+- local observation only
+- lightweight belief state
+- recent action memory
+- teammate messaging
+- basic spatial exploration and target selection
 
----
+Supported tools:
 
-### 3. Termination Issue (Observed)
+- `move(direction)`
+- `look()`
+- `pick_up(item)`
+- `check_inventory()`
+- `use_item(item, target)`
+- `send_message(agent, message)`
 
-Even after both agents reached the exit:
+Belief state tracks things like:
+
+- known key location
+- known door location
+- known exit location
+- whether the agent has the key
+- known walls
+- visit counts / revisits
+- teammate status from messages
+
+## Logging And Analysis
+
+Each logged step includes structured fields such as:
+
+- step number
+- agent id
+- observation
+- thought
+- action
+- tool input
+- tool output
+- result state
+- belief state
+- ground truth snapshot
+- environment state
+- delivered messages
+- anomaly metadata
+- latency breakdowns
+- Langfuse step metadata
+
+Each run also produces a summary with:
+
+- run status
+- step count
+- door state
+- whether agents reached the exit
+- replay metadata for the frontend
+- major events
+- loop anomalies
+- observability metadata including Langfuse URL when enabled
+
+The analysis layer surfaces:
+
+- major events such as key pickup, door unlock, exit arrival
+- repeated-position loop anomalies
+- belief mismatches
+- coordination lag signals
+
+## Langfuse Integration
+
+Langfuse is optional.
+
+If the `langfuse` package is installed and the following env vars are available:
+
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- optionally `LANGFUSE_HOST`
+
+the simulation emits traces and spans to Langfuse.
+
+The exported local trace still contains observability metadata even if Langfuse is unavailable, so the replay UI and JSON inspection continue to work locally.
+
+When Langfuse is enabled, the run summary contains:
+
+- `trace_id`
+- `trace_url`
+- init status
+- Python executable
+- flush settings
+
+## How To Run
+
+### 1. Install Python dependencies
+
+Use your environment of choice and install the project requirements you need. At minimum, the simulation runs with the local Python files in this repo. For Langfuse export, install the `langfuse` package and configure credentials.
+
+### 2. Build the replay UI
+
+```bash
+npm install
+npm run build
+```
+
+### 3. Run the simulation
+
+```bash
+python3 main.py
+```
+
+This will:
+
+- generate a fresh episode
+- write `artifacts/latest_trace.json`
+- print the terminal summary
+- start the local replay server if `frontend/dist` exists
+- open the replay UI in the browser when possible
+
+The replay server runs on:
 
 ```text
-step 14: Agent A reached the exit
-step 29: Agent B reached the exit
-Run status: max_steps_reached
+http://127.0.0.1:8123
 ```
 
-The simulation did not terminate early.
+## Trace Output
 
-This indicates a missing or delayed termination condition.
-
----
-
-## 🧾 Summary Output
-
-Each run produces:
-
-### What happened
+The canonical local trace file is:
 
 ```text
-- step 3: Agent A picked up the key
-- step 22: Agent A unlocked the door
-- step 29: Agent B reached the exit
+artifacts/latest_trace.json
 ```
 
----
+It includes both:
 
-### Why it happened
+- the full per-step history
+- the summary block consumed by the replay UI
 
-```text
-- Agents completed objectives successfully
-- However, both agents exhibited inefficient behavior:
-  - repeated visits to the same locations
-- System lacks early termination after success
-```
+Replay metadata includes:
 
----
+- grid size
+- walls
+- key position
+- door position
+- exit position
+- initial agent positions
 
-### What should change
+## Success And Failure Conditions
 
-```text
-- Add termination condition when both agents reach exit
-- Reduce repeated visits via simple heuristics
-- Improve coordination awareness
-```
+The simulation can end with:
 
----
+- `success`
+- `agents_stuck`
+- `max_steps_reached`
 
-## 🖥️ Visualization
+Success currently means:
 
-A simple, lightweight interface is used:
+- the door is unlocked
+- both agents are standing on the exit
 
-```
-[ GRID ]              [ LOGS ]
+## Current Behavior Notes
 
-. . . . . . . .
-. A . . # . . .
-. . . K . . . .
-. . # . . . . .
-. . . . D . . .
-. . . . . . . .
-. . . . . . B .
-. . . . . . . E
-```
+The current implementation intentionally keeps the agents simple enough to produce interesting traces:
 
-* Left: environment state
-* Right: agent decision trace
+- they can loop
+- they rely on partial information
+- they communicate imperfectly
+- they are readable, not optimal
 
----
+Some recent improvements already in the codebase:
 
-## 🏗️ System Design
+- run ends successfully when both agents reach the exit after the door is unlocked
+- agents do not wander after reaching the exit unless key-handling logic still requires progress
+- replay UI shows a 5-step movement trail for each agent
+- replay footer links to the Langfuse trace URL when available
 
-```
-simulation.py → world + game loop  
-agents.py     → agent logic  
-tools.py      → environment interaction  
-logger.py     → structured logging  
-main.py       → entry point  
-```
+## Frontend Stack
 
----
+The replay UI uses:
 
-## 🤖 AI-Assisted Development
+- React 18
+- Vite 5
 
-This project was built using a structured AI workflow:
+Frontend entry points live under `frontend/src/`.
 
-* **ChatGPT**: prompt design and system framing
-* **Claude**: system design and reasoning
-* **Codex**: code implementation and debugging
-* **Human**: orchestration, validation, and refinement
+## Development Notes
 
-> AI outputs were reviewed and selectively adopted rather than blindly accepted.
+This project was developed iteratively with AI-assisted tooling and human review. The emphasis throughout is:
 
----
+- observability over optimization
+- replayability over sophistication
+- clarity over cleverness
 
-## 🚀 Key Takeaways
+## Quick Takeaway
 
-* The dungeon is not the point — **traces are the point**
-* Observability enables understanding of agent behavior
-* Simple systems can still produce rich failure modes
-* Debugging multi-agent systems requires:
+This is an observability system disguised as a dungeon simulation.
 
-  * state consistency
-  * belief tracking
-  * behavior analysis
-
-I visualize full agent execution traces in Langfuse, including:
-- step-level decisions
-- reasoning vs tool execution
-- latency breakdown
-- failure patterns (loops, belief mismatch)
+The dungeon is just the stage. The real output is the trace.
