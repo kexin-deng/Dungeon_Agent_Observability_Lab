@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dungeon Agent Replay</title>
+  </head>
+  <body>
+    <div id="boot-status" style="position:fixed;top:16px;left:16px;right:16px;z-index:9999;padding:14px 16px;border-radius:14px;border:1px solid rgba(255,255,255,0.18);background:rgba(12,12,18,0.82);color:#f7efe5;font:14px/1.5 sans-serif;">
+      Loading replay UI...
+    </div>
+    <div id="root"></div>
+    <script>
+      const bootNode = document.getElementById("boot-status");
+      if (bootNode) {
+        bootNode.textContent = "Inline boot script running...";
+      }
+    </script>
+    <script type="module">
+      const bootNode = document.getElementById("boot-status");
+      if (bootNode) {
+        bootNode.textContent = "Module loader running...";
+      }
+      import("./src/main.jsx")
+        .then(() => {
+          const node = document.getElementById("boot-status");
+          if (node && !window.__replayMounted) {
+            node.textContent = "React module loaded, waiting for mount...";
+          }
+        })
+        .catch((error) => {
+          const node = document.getElementById("boot-status");
+          if (node) {
+            node.textContent = `Module import failed: ${error.message}`;
+          }
+        });
+    </script>
+  </body>
+  </html>

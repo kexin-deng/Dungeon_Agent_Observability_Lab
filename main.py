@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import os
+import socket
+import subprocess
+import sys
+import time
+import webbrowser
 from pathlib import Path
 
 
@@ -26,6 +31,34 @@ load_env_file()
 from simulation import DungeonSimulation
 
 
+def _port_is_open(port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+
+
+def ensure_replay_server(port: int = 8123) -> str | None:
+    if _port_is_open(port):
+        return f"http://127.0.0.1:{port}"
+
+    dist_path = Path("frontend/dist/index.html")
+    if not dist_path.exists():
+        return None
+
+    subprocess.Popen(
+        [sys.executable, "replay_server.py", "--port", str(port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    for _ in range(20):
+        if _port_is_open(port):
+            return f"http://127.0.0.1:{port}"
+        time.sleep(0.15)
+    return None
+
+
 def main() -> None:
     output_dir = Path("artifacts")
     trace_path = output_dir / "latest_trace.json"
@@ -35,6 +68,9 @@ def main() -> None:
 
     latest_logs = simulation.logger.history[-2:] if simulation.logger.history else []
     tracer_status = simulation.tracer.status()
+    replay_url = ensure_replay_server()
+    if replay_url:
+        webbrowser.open(replay_url)
     print(simulation.render(result.summary["steps"], latest_logs))
     print("")
     print(result.analysis_report)
@@ -45,6 +81,10 @@ def main() -> None:
     print(f"Langfuse trace id: {tracer_status['trace_id']}")
     if tracer_status["trace_url"]:
         print(f"Langfuse trace url: {tracer_status['trace_url']}")
+    if replay_url:
+        print(f"Replay UI: {replay_url}")
+    else:
+        print("Replay UI: unavailable (build frontend with `npm install` then `npm run build`)")
     print(f"Trace written to: {result.trace_path}")
 
 

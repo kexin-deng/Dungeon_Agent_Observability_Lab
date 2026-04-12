@@ -40,6 +40,7 @@ class DungeonSimulation:
 
         self.agent_states: dict[str, AgentState] = {}
         self.agents: dict[str, DungeonAgent] = {}
+        self.initial_agent_positions: dict[str, list[int]] = {}
         self.recorded_exit_arrivals: set[str] = set()
 
         self.logger = SimulationLogger(run_id=f"run-{uuid.uuid4().hex[:8]}")
@@ -77,6 +78,7 @@ class DungeonSimulation:
             occupied.add(position)
             state = AgentState(agent_id=agent_id, position=position)
             self.agent_states[agent_id] = state
+            self.initial_agent_positions[agent_id] = [position[0], position[1]]
 
         self.agents["A"] = DungeonAgent(self.agent_states["A"], teammate_id="B")
         self.agents["B"] = DungeonAgent(self.agent_states["B"], teammate_id="A")
@@ -184,6 +186,7 @@ class DungeonSimulation:
             "received_messages": delivered,
             "door_unlocked": self.door_unlocked,
             "door_position": list(self.door_position),
+            "grid_size": GRID_SIZE,
         }
         self.agents[agent_id].observe(observation)
         return observation
@@ -420,6 +423,14 @@ class DungeonSimulation:
                 agent_id: state.position == self.exit_position
                 for agent_id, state in self.agent_states.items()
             },
+            "replay_metadata": {
+                "grid_size": GRID_SIZE,
+                "walls": [[row, col] for row, col in sorted(self.walls)],
+                "key_position": list(self.key_position),
+                "door_position": list(self.door_position),
+                "exit_position": list(self.exit_position),
+                "initial_agent_positions": self.initial_agent_positions,
+            },
             "major_events": major_events,
             "loop_anomalies": self._collect_summary_anomalies(),
         }
@@ -486,17 +497,85 @@ class DungeonSimulation:
                 cells.append(symbol)
             grid.append(" ".join(cells))
 
-        panel_lines = [f"Step {step}", "Grid:"]
-        panel_lines.extend(grid)
-        panel_lines.append("")
-        panel_lines.append("Logs:")
-        for log in latest_logs:
-            panel_lines.append(
-                f"{log.agent_id} | action={log.action} | result={log.tool_output.get('reason', 'ok')}"
-            )
-            panel_lines.append(f"obs={log.observation['visible_cells']}")
-            panel_lines.append(f"belief={log.belief_state}")
+        left_panel = [
+            f"Step {step}",
+            "[ GRID ]",
+            *grid,
+        ]
+        right_panel = self._build_log_panel(latest_logs)
+        layout = self._render_two_panel_layout(left_panel, right_panel)
+        legend = "Legend: A/B=agents K=key D=locked d=unlocked E=exit #=wall"
+        return f"{layout}\n\n{legend}"
+
+    def _build_log_panel(self, latest_logs: list[StepLog]) -> list[str]:
+        lines = ["[ LOGS ]"]
+        if not latest_logs:
+            lines.append("No step logs available.")
+            return lines
+
+        for index, log in enumerate(latest_logs):
+            lines.append(f"Agent {log.agent_id}")
+            lines.append(f"observation: {self._summarize_visible_cells(log.observation['visible_cells'])}")
+            lines.append(f"action: {log.action} {log.tool_input}")
+            lines.append(f"result: {self._summarize_tool_output(log.tool_output)}")
+            lines.append(f"belief: {self._summarize_belief_state(log.belief_state)}")
             message = log.delivered_messages if log.delivered_messages else "-"
-            panel_lines.append(f"message={message}")
-            panel_lines.append("")
-        return "\n".join(panel_lines)
+            lines.append(f"message: {message}")
+            if index != len(latest_logs) - 1:
+                lines.append("")
+        return lines
+
+    def _render_two_panel_layout(
+        self,
+        left_lines: list[str],
+        right_lines: list[str],
+        left_width: int = 34,
+    ) -> str:
+        total_rows = max(len(left_lines), len(right_lines))
+        padded_left = left_lines + [""] * (total_rows - len(left_lines))
+        padded_right = right_lines + [""] * (total_rows - len(right_lines))
+        return "\n".join(
+            f"{left:<{left_width}}  {right}".rstrip()
+            for left, right in zip(padded_left, padded_right)
+        )
+
+    def _summarize_visible_cells(self, visible_cells: list[dict[str, Any]]) -> str:
+        summary_parts = []
+        for cell in visible_cells:
+            direction = cell["direction"]
+            position = tuple(cell["position"])
+            cell_type = cell["cell_type"]
+            if cell_type == "door":
+                state = "unlocked" if cell.get("door_unlocked") else "locked"
+                summary_parts.append(f"{direction}:{cell_type}@{position}({state})")
+            elif cell_type == "agent":
+                summary_parts.append(f"{direction}:agent-{cell.get('agent_id')}@{position}")
+            else:
+                summary_parts.append(f"{direction}:{cell_type}@{position}")
+        return ", ".join(summary_parts)
+
+    def _summarize_tool_output(self, tool_output: dict[str, Any]) -> str:
+        if not tool_output.get("success", False):
+            return tool_output.get("reason", "failed")
+        if "position" in tool_output:
+            return f"moved to {tuple(tool_output['position'])}"
+        if tool_output.get("door_unlocked"):
+            return "door unlocked"
+        if "inventory" in tool_output:
+            return f"inventory={tool_output['inventory']}"
+        if "visible_cells" in tool_output:
+            return "observation refreshed"
+        if "queued_for" in tool_output:
+            return f"message queued for {tool_output['queued_for']}"
+        return "ok"
+
+    def _summarize_belief_state(self, belief_state: dict[str, Any]) -> str:
+        compact_belief = {
+            "key": belief_state.get("key_position"),
+            "door": belief_state.get("door_position"),
+            "exit": belief_state.get("exit_position"),
+            "door_unlocked": belief_state.get("door_unlocked"),
+            "has_key": belief_state.get("has_key"),
+            "teammate": belief_state.get("teammate_last_position"),
+        }
+        return str(compact_belief)

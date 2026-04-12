@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,7 @@ class AgentState:
             "teammate_last_position": None,
             "visited_positions": [],
             "visit_counts": {},
+            "grid_size": 8,
         }
     )
     recent_actions: list[str] = field(default_factory=list)
@@ -67,6 +69,7 @@ class DungeonAgent:
         self.state.remember_position(self.state.position)
         self.state.belief["has_key"] = "key" in self.state.inventory
         self.state.belief["door_unlocked"] = observation["door_unlocked"]
+        self.state.belief["grid_size"] = observation.get("grid_size", self.state.belief.get("grid_size", 8))
         if self.state.belief["has_key"]:
             self.state.belief["key_position"] = None
         for cell in visible_cells:
@@ -89,6 +92,13 @@ class DungeonAgent:
     def choose_action(self, observation: dict[str, Any]) -> AgentAction:
         current_position = tuple(observation["self_position"])
         self.state.remember_position(current_position)
+
+        if self._should_hold_exit_position(current_position):
+            return AgentAction(
+                tool="look",
+                args={},
+                thought="I am already at the exit, so I should hold position and keep watch.",
+            )
 
         for cell in observation["visible_cells"]:
             if tuple(cell["position"]) == current_position and cell["cell_type"] == "key":
@@ -195,7 +205,9 @@ class DungeonAgent:
 
         target = self._choose_target()
         if target:
-            best_direction = self._move_toward_target(target, walkable_neighbors)
+            best_direction = self._plan_direction_to_target(target, walkable_neighbors)
+            if best_direction is None:
+                best_direction = self._move_toward_target(target, walkable_neighbors)
             if best_direction:
                 return best_direction
 
@@ -217,6 +229,8 @@ class DungeonAgent:
         )
 
     def _choose_target(self) -> tuple[int, int] | None:
+        if self.state.belief["exit_position"] and self.state.belief["door_unlocked"]:
+            return tuple(self.state.belief["exit_position"])
         if (
             "key" not in self.state.inventory
             and not self.state.belief["door_unlocked"]
@@ -225,11 +239,20 @@ class DungeonAgent:
             return tuple(self.state.belief["key_position"])
         if "key" in self.state.inventory and self.state.belief["door_position"]:
             return tuple(self.state.belief["door_position"])
-        if self.state.belief["exit_position"] and self.state.belief["door_unlocked"]:
-            return tuple(self.state.belief["exit_position"])
         if self.state.belief["exit_position"] and self.state.belief.get("door_position") is not None:
             return tuple(self.state.belief["exit_position"])
         return None
+
+    def _should_hold_exit_position(self, current_position: tuple[int, int]) -> bool:
+        exit_position = self.state.belief.get("exit_position")
+        if exit_position is None or tuple(exit_position) != current_position:
+            return False
+
+        has_key = "key" in self.state.inventory
+        if self.state.belief["door_unlocked"]:
+            return True
+
+        return not has_key
 
     def _move_toward_target(
         self,
@@ -259,3 +282,55 @@ class DungeonAgent:
         if best_choice is None and target == (current_row, current_col):
             return None
         return best_choice
+
+    def _plan_direction_to_target(
+        self,
+        target: tuple[int, int],
+        walkable_neighbors: dict[str, dict[str, Any]],
+    ) -> str | None:
+        if not walkable_neighbors:
+            return None
+
+        start = self.state.position
+        if start == target:
+            return None
+
+        grid_size = int(self.state.belief.get("grid_size", 8))
+        blocked = {tuple(position) for position in self.state.belief.get("walls", [])}
+        if not self.state.belief.get("door_unlocked") and self.state.belief.get("door_position"):
+            blocked.add(tuple(self.state.belief["door_position"]))
+
+        frontier: deque[tuple[int, int]] = deque([start])
+        parents: dict[tuple[int, int], tuple[int, int] | None] = {start: None}
+
+        while frontier:
+            position = frontier.popleft()
+            if position == target:
+                break
+
+            for direction in DIRECTION_VECTORS:
+                row_delta, col_delta = DIRECTION_VECTORS[direction]
+                next_position = (position[0] + row_delta, position[1] + col_delta)
+                if (
+                    next_position in parents
+                    or next_position in blocked
+                    or not (0 <= next_position[0] < grid_size and 0 <= next_position[1] < grid_size)
+                ):
+                    continue
+                parents[next_position] = position
+                frontier.append(next_position)
+
+        if target not in parents:
+            return None
+
+        step = target
+        while parents.get(step) not in {None, start}:
+            step = parents[step]  # type: ignore[assignment]
+
+        if parents.get(step) is None:
+            return None
+
+        for direction, cell in walkable_neighbors.items():
+            if tuple(cell["position"]) == step:
+                return direction
+        return None
